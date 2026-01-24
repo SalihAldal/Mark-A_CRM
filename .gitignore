@@ -1,0 +1,23 @@
+# Genel
+.env
+.env.*
+.vscode/
+.idea/
+
+# Node
+node_modules/
+dist/
+
+# Laravel
+/apps/laravel/vendor/
+/apps/laravel/node_modules/
+/apps/laravel/public/hot
+/apps/laravel/storage/*.key
+
+# Build (vite)
+# Eğer build pushlamak istemiyorsan:
+#/apps/laravel/public/build
+
+# Logs
+npm-debug.log*
+yarn-error.log*
