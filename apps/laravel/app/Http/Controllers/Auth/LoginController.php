@@ -33,7 +33,28 @@ class LoginController extends Controller
         /** @var TenantContext $ctx */
         $ctx = app(TenantContext::class);
 
-        return redirect()->to($ctx->isSuperPanel() ? '/super' : '/panel');
+        $roleKey = (string) (Auth::user()?->role?->key ?? '');
+
+        // Superadmin sadece Super Panel domaininde çalışır.
+        if ($roleKey === 'superadmin') {
+            if (!$ctx->isSuperPanel()) {
+                Auth::logout();
+                $request->session()->invalidate();
+                $request->session()->regenerateToken();
+                return redirect()->to('/login')->with('status', 'Superadmin girişi için Super Panel domainini kullan: superadmin.localhost:8000');
+            }
+            return redirect()->to('/super');
+        }
+
+        // Tenant kullanıcıları (tenant_admin/staff/customer) tenant panel domaininde çalışır.
+        if ($ctx->isSuperPanel()) {
+            Auth::logout();
+            $request->session()->invalidate();
+            $request->session()->regenerateToken();
+            return redirect()->to('/login')->with('status', 'Bu kullanıcı Super Panelde kullanılamaz. Tenant domaini ile giriş yap (örn: tenant1.localhost:8000).');
+        }
+
+        return redirect()->to('/panel');
     }
 
     public function logout(Request $request)

@@ -61,8 +61,18 @@ class IntegrationSender
             // Instagram Messaging API (Meta Graph) - requires a Page access token
             $pageAccessToken = (string) ($cfg['page_access_token'] ?? '');
             $recipientId = (string) ($contact->external_id ?? '');
+            if ($recipientId === '') {
+                // legacy fallback (if external_id was not populated but instagram_user_id was)
+                $recipientId = (string) ($contact->instagram_user_id ?? '');
+            }
             if ($pageAccessToken === '' || $recipientId === '') {
-                throw new \RuntimeException('Instagram page_access_token veya recipient id eksik.');
+                if ($pageAccessToken === '' && $recipientId === '') {
+                    throw new \RuntimeException('Instagram gönderim hatası: Page Access Token ve recipient id eksik. Settings > Entegrasyonlar > Instagram alanını doldur ve sohbeti IG’den tekrar başlat.');
+                }
+                if ($pageAccessToken === '') {
+                    throw new \RuntimeException('Instagram gönderim hatası: Page Access Token eksik. Settings > Entegrasyonlar > Instagram > Page Access Token girip Kaydet.');
+                }
+                throw new \RuntimeException('Instagram gönderim hatası: recipient id eksik (contact external_id/instagram_user_id boş).');
             }
 
             $url = "https://graph.facebook.com/v19.0/me/messages";

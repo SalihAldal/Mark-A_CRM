@@ -40,7 +40,22 @@
             </div>
             <div>
                 <div class="label">Devralan</div>
-                <div style="font-weight:900">{{ $assigned?->name ?? '—' }}</div>
+                @if($roleKey === 'tenant_admin')
+                    <form method="POST" action="/leads/{{ $lead->id }}/assign" style="display:flex; gap:8px; align-items:center; margin-top:6px;">
+                        @csrf
+                        <select class="input" name="assigned_user_id" style="min-width:220px;">
+                            <option value="">—</option>
+                            @foreach(($assignableUsers ?? []) as $u)
+                                <option value="{{ (int) data_get($u,'id',0) }}" {{ (int)($lead->assigned_user_id ?? 0) === (int) data_get($u,'id',0) ? 'selected' : '' }}>
+                                    {{ data_get($u,'name','') }}
+                                </option>
+                            @endforeach
+                        </select>
+                        <button class="btn btnPrimary" type="submit">Kaydet</button>
+                    </form>
+                @else
+                    <div style="font-weight:900">{{ $assigned?->name ?? '—' }}</div>
+                @endif
             </div>
             <div>
                 <div class="label">Son temas</div>

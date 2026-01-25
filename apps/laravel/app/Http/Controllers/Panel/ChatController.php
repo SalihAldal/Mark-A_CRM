@@ -13,16 +13,27 @@ class ChatController extends Controller
 {
     public function index(Request $request)
     {
+        $roleKey = (string) ($request->user()->role?->key ?? '');
+        $uid = (int) $request->user()->id;
+
         $threadsQ = Thread::query()
             ->select([
                 'threads.*',
                 'leads.name as lead_name',
                 'contacts.name as contact_name',
+                'contacts.username as contact_username',
             ])
             ->leftJoin('leads', 'leads.id', '=', 'threads.lead_id')
             ->leftJoin('contacts', 'contacts.id', '=', 'threads.contact_id')
             ->orderByDesc('threads.last_message_at')
             ->orderByDesc('threads.id');
+
+        if ($roleKey === 'staff') {
+            $threadsQ->whereNotNull('threads.lead_id');
+            $threadsQ->where(function ($q) use ($uid) {
+                $q->where('leads.assigned_user_id', $uid)->orWhere('leads.owner_user_id', $uid);
+            });
+        }
 
         if ($request->filled('channel')) {
             $threadsQ->where('threads.channel', $request->string('channel')->toString());
@@ -46,12 +57,25 @@ class ChatController extends Controller
                     'threads.*',
                     'leads.name as lead_name',
                     'contacts.name as contact_name',
+                    'contacts.username as contact_username',
                 ])
                 ->leftJoin('leads', 'leads.id', '=', 'threads.lead_id')
                 ->leftJoin('contacts', 'contacts.id', '=', 'threads.contact_id')
                 ->where('threads.id', $selectedId)
                 ->first();
             if ($selected) {
+                if ($roleKey === 'staff') {
+                    if (!$selected->lead_id) {
+                        abort(403);
+                    }
+                    $lead = \App\Models\Lead::query()->find((int) $selected->lead_id);
+                    if (!$lead) {
+                        abort(403);
+                    }
+                    if ((int) ($lead->assigned_user_id ?? 0) !== $uid && (int) ($lead->owner_user_id ?? 0) !== $uid) {
+                        abort(403);
+                    }
+                }
                 $messages = Message::query()
                     ->where('thread_id', $selected->id)
                     // created_at timezone/seed farkları yüzünden sıralama kayabiliyor.

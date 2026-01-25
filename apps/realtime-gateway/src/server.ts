@@ -78,7 +78,6 @@ function userRoom(tenantId: number, userId: number): string {
 
 const app = express();
 app.use(cors({ origin: CORS_ORIGIN === "*" ? true : CORS_ORIGIN, credentials: true }));
-app.use(express.json({ limit: "2mb" }));
 
 app.get("/health", (_req, res) => {
   res.json({ ok: true, ts: Date.now() });
@@ -167,6 +166,12 @@ app.post(
     return res.json({ ok: true });
   }
 );
+
+// IMPORTANT:
+// Keep JSON body parser AFTER /internal/broadcast.
+// Otherwise express.json() will consume the stream and express.raw() won't see the body,
+// making signature verification fail (401) even with correct keys.
+app.use(express.json({ limit: "2mb" }));
 
 server.listen(PORT, () => {
   // eslint-disable-next-line no-console

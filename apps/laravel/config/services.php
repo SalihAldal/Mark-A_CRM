@@ -36,4 +36,10 @@ return [
         'signing_key' => env('GATEWAY_SIGNING_KEY'),
     ],
 
+    // Meta (Facebook / Instagram / WhatsApp) webhook verification token
+    // Single source of truth: .env -> META_VERIFY_TOKEN
+    'meta' => [
+        'verify_token' => env('META_VERIFY_TOKEN'),
+    ],
+
 ];

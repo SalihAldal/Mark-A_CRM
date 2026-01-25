@@ -12,6 +12,7 @@ use App\Services\Integrations\IntegrationSender;
 use App\Services\RealtimeGateway;
 use App\Support\TenantContext;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
@@ -19,6 +20,8 @@ class MessageController extends Controller
 {
     public function sendText(Request $request, Thread $thread, RealtimeGateway $gateway, LeadScoringService $scoring)
     {
+        $this->authorizeThreadAccess($request, $thread);
+
         $data = $request->validate([
             'text' => ['required', 'string', 'max:5000'],
         ]);
@@ -102,6 +105,8 @@ class MessageController extends Controller
 
     public function sendFile(Request $request, Thread $thread, RealtimeGateway $gateway, LeadScoringService $scoring)
     {
+        $this->authorizeThreadAccess($request, $thread);
+
         $data = $request->validate([
             'file' => ['required', 'file', 'max:25600'], // 25MB
         ]);
@@ -189,6 +194,8 @@ class MessageController extends Controller
 
     public function sendVoice(Request $request, Thread $thread, RealtimeGateway $gateway, LeadScoringService $scoring)
     {
+        $this->authorizeThreadAccess($request, $thread);
+
         $data = $request->validate([
             'voice' => ['required', 'file', 'max:25600', 'mimetypes:audio/webm,video/webm', 'mimes:webm'], // 25MB
             'duration_ms' => ['nullable', 'integer', 'min:0', 'max:3600000'],
@@ -245,6 +252,39 @@ class MessageController extends Controller
         ]);
 
         return redirect()->to('/chats?thread=' . $thread->id);
+    }
+
+    private function authorizeThreadAccess(Request $request, Thread $thread): void
+    {
+        /** @var TenantContext $ctx */
+        $ctx = app(TenantContext::class);
+        $tenantId = $ctx->requireTenantId();
+
+        if ((int) $thread->tenant_id !== (int) $tenantId) {
+            abort(403);
+        }
+
+        $roleKey = (string) ($request->user()->role?->key ?? '');
+        if ($roleKey !== 'staff') {
+            return;
+        }
+
+        if (!$thread->lead_id) {
+            abort(403);
+        }
+
+        $lead = DB::table('leads')
+            ->where('tenant_id', $tenantId)
+            ->where('id', (int) $thread->lead_id)
+            ->first(['id', 'owner_user_id', 'assigned_user_id']);
+        if (!$lead) {
+            abort(403);
+        }
+
+        $uid = (int) $request->user()->id;
+        if ((int) ($lead->assigned_user_id ?? 0) !== $uid && (int) ($lead->owner_user_id ?? 0) !== $uid) {
+            abort(403);
+        }
     }
 }
 

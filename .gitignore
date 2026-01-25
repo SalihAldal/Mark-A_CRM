@@ -9,10 +9,9 @@ node_modules/
 dist/
 
 # Laravel
-/apps/laravel/vendor/
-/apps/laravel/node_modules/
-/apps/laravel/public/hot
-/apps/laravel/storage/*.key
+apps/laravel/vendor/
+apps/laravel/node_modules/
+apps/laravel/storage/*.key
 
 # Build (vite)
 # Eğer build pushlamak istemiyorsan:

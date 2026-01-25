@@ -11,6 +11,17 @@ class ResolveTenantByHost
 {
     public function handle(Request $request, Closure $next)
     {
+        // IMPORTANT:
+        // Meta (Facebook/Instagram/WhatsApp) webhook validation + delivery requests come from Meta servers
+        // to your public HTTPS endpoint (often via ngrok / reverse proxy). Those requests MUST be publicly
+        // reachable even if the host is not registered as a tenant/super domain in our multi-tenant table.
+        //
+        // We intentionally bypass tenant-domain resolution for webhook routes; the webhook controller
+        // resolves the tenant context using the integration account / verify token inside the payload.
+        if ($request->is('webhooks/*')) {
+            return $next($request);
+        }
+
         $host = $request->getHost(); // port içermez
 
         $domain = Domain::query()

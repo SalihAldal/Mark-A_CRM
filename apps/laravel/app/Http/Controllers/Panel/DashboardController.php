@@ -17,21 +17,54 @@ class DashboardController extends Controller
         $ctx = app(TenantContext::class);
         $tenantId = $ctx->requireTenantId();
 
-        $leadCount = Lead::query()->count();
-        $openThreadCount = Thread::query()->where('status', 'open')->count();
+        $role = (string) ($request->user()->role?->key ?? '');
+        $uid = (int) $request->user()->id;
 
-        $byStage = DB::table('leads')
-            ->select('stage_id', DB::raw('COUNT(*) as cnt'))
-            ->where('tenant_id', $tenantId)
-            ->groupBy('stage_id')
-            ->orderByDesc('cnt')
+        $leadsBase = DB::table('leads as l')->where('l.tenant_id', $tenantId);
+        $threadsBase = DB::table('threads as t')->where('t.tenant_id', $tenantId);
+
+        if ($role === 'staff') {
+            $leadsBase->where(function ($q) use ($uid) {
+                $q->where('l.assigned_user_id', $uid)->orWhere('l.owner_user_id', $uid);
+            });
+
+            $threadsBase
+                ->leftJoin('leads as l', function ($join) use ($tenantId) {
+                    $join->on('l.id', '=', 't.lead_id')->where('l.tenant_id', '=', $tenantId);
+                })
+                ->where(function ($q) use ($uid) {
+                    $q->where('l.assigned_user_id', $uid)->orWhere('l.owner_user_id', $uid);
+                });
+        }
+
+        $leadCount = (clone $leadsBase)->count();
+        $wonCount = (clone $leadsBase)->where('l.status', 'won')->count();
+        $lostCount = (clone $leadsBase)->where('l.status', 'lost')->count();
+
+        $openThreadCount = (clone $threadsBase)->where('t.status', 'open')->count();
+
+        $liveLeads = (clone $leadsBase)
+            ->leftJoin('lead_stages as s', 's.id', '=', 'l.stage_id')
+            ->select('l.id', 'l.name', 'l.email', 'l.phone', 'l.score', 's.name as stage_name', 's.color as stage_color')
+            ->orderByDesc('l.updated_at')
+            ->limit(10)
+            ->get();
+
+        $liveThreads = (clone $threadsBase)
+            ->leftJoin('contacts as c', 'c.id', '=', 't.contact_id')
+            ->leftJoin('integration_accounts as a', 'a.id', '=', 't.integration_account_id')
+            ->select('t.id', 't.channel', 't.status', 't.last_message_at', 'c.name as contact_name', 'a.provider as provider')
+            ->orderByDesc(DB::raw('COALESCE(t.last_message_at, t.created_at)'))
             ->limit(10)
             ->get();
 
         return view('panel.dashboard', [
             'leadCount' => $leadCount,
             'openThreadCount' => $openThreadCount,
-            'byStage' => $byStage,
+            'wonCount' => $wonCount,
+            'lostCount' => $lostCount,
+            'liveLeads' => $liveLeads,
+            'liveThreads' => $liveThreads,
         ]);
     }
 }

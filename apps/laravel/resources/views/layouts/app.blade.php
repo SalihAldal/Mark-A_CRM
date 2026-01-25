@@ -13,6 +13,12 @@
     <aside class="sidebar" :class="{open: mobileNav}">
         @php($ctx = app(\App\Support\TenantContext::class))
         @php($roleKey = (string)(auth()->user()->role?->key ?? ''))
+        @php($notifUnread = 0)
+        @if(!$ctx->isSuperPanel() && $roleKey !== 'customer')
+            @if(\Illuminate\Support\Facades\Schema::hasTable('notifications'))
+                @php($notifUnread = (int)\Illuminate\Support\Facades\DB::table('notifications')->where('tenant_id', auth()->user()->tenant_id)->where('user_id', auth()->id())->where('is_read', 0)->count())
+            @endif
+        @endif
         <div class="brand">
             <div class="logo">M</div>
             <div class="brandText">
@@ -23,20 +29,76 @@
 
         <nav class="nav">
             @if($ctx->isSuperPanel())
-                <a class="navItem {{ request()->is('super') ? 'active' : '' }}" href="/super">Super Dashboard</a>
-                <a class="navItem {{ request()->is('super/tenants') ? 'active' : '' }}" href="/super/tenants">Tenant Yönetimi</a>
-                <a class="navItem {{ request()->is('super/settings') ? 'active' : '' }}" href="/super/settings">Sistem Ayarları</a>
+                <a class="navItem {{ request()->is('super') ? 'active' : '' }}" href="/super">
+                    <span class="navIcon">@include('partials.icons.home')</span>
+                    <span>Super Dashboard</span>
+                </a>
+                <a class="navItem {{ request()->is('super/tenants') ? 'active' : '' }}" href="/super/tenants">
+                    <span class="navIcon">@include('partials.icons.users')</span>
+                    <span>Tenant Yönetimi</span>
+                </a>
+                <a class="navItem {{ request()->is('super/settings') ? 'active' : '' }}" href="/super/settings">
+                    <span class="navIcon">@include('partials.icons.settings')</span>
+                    <span>Sistem Ayarları</span>
+                </a>
             @else
-                <a class="navItem {{ request()->is('panel') ? 'active' : '' }}" href="/panel">{{ __('ui.nav_dashboard') }}</a>
-                <a class="navItem {{ request()->is('leads*') ? 'active' : '' }}" href="/leads">{{ __('ui.nav_leads') }}</a>
-                <a class="navItem {{ request()->is('chats*') ? 'active' : '' }}" href="/chats">{{ __('ui.nav_chats') }}</a>
-                <a class="navItem {{ request()->is('calendar*') ? 'active' : '' }}" href="/calendar">{{ __('ui.nav_calendar') }}</a>
-                <a class="navItem {{ request()->is('stats*') ? 'active' : '' }}" href="/stats">{{ __('ui.nav_stats') }}</a>
+                <a class="navItem {{ request()->is('panel') ? 'active' : '' }}" href="/panel">
+                    <span class="navIcon">@include('partials.icons.home')</span>
+                    <span>{{ __('ui.nav_dashboard') }}</span>
+                </a>
+                <a class="navItem {{ request()->is('leads*') ? 'active' : '' }}" href="/leads">
+                    <span class="navIcon">@include('partials.icons.users')</span>
+                    <span>{{ __('ui.nav_leads') }}</span>
+                </a>
+
+                @if($roleKey === 'tenant_admin')
+                    <a class="navItem {{ request()->is('notifications*') ? 'active' : '' }}" href="/notifications">
+                        <span class="navIcon">@include('partials.icons.bell')</span>
+                        <span>Bildirimler</span>
+                    </a>
+                @endif
+
+                @if($roleKey === 'tenant_admin')
+                    <a class="navItem {{ request()->is('lists*') ? 'active' : '' }}" href="/lists">
+                        <span class="navIcon">@include('partials.icons.list')</span>
+                        <span>{{ __('ui.nav_lists') }}</span>
+                    </a>
+                @endif
+
+                <a class="navItem {{ request()->is('chats*') ? 'active' : '' }}" href="/chats">
+                    <span class="navIcon">@include('partials.icons.chat')</span>
+                    <span>{{ __('ui.nav_chats') }}</span>
+                </a>
+                <a class="navItem {{ request()->is('calendar*') ? 'active' : '' }}" href="/calendar">
+                    <span class="navIcon">@include('partials.icons.calendar')</span>
+                    <span>{{ __('ui.nav_calendar') }}</span>
+                </a>
+
                 @if($roleKey !== 'customer')
-                    <a class="navItem {{ request()->is('lists*') ? 'active' : '' }}" href="/lists">{{ __('ui.nav_lists') }}</a>
-                    <a class="navItem {{ request()->is('mail*') ? 'active' : '' }}" href="/mail">{{ __('ui.nav_mail') }}</a>
-                    <a class="navItem {{ request()->is('settings*') ? 'active' : '' }}" href="/settings">{{ __('ui.nav_settings') }}</a>
-                    <a class="navItem {{ request()->is('help*') ? 'active' : '' }}" href="/help">{{ __('ui.nav_help') }}</a>
+                    <a class="navItem {{ request()->is('mail*') ? 'active' : '' }}" href="/mail">
+                        <span class="navIcon">@include('partials.icons.mail')</span>
+                        <span>{{ __('ui.nav_mail') }}</span>
+                    </a>
+                @endif
+
+                <a class="navItem {{ request()->is('stats*') ? 'active' : '' }}" href="/stats">
+                    <span class="navIcon">@include('partials.icons.chart')</span>
+                    <span>{{ __('ui.nav_stats') }}</span>
+                </a>
+
+                @if($roleKey === 'tenant_admin')
+                    <a class="navItem {{ request()->is('settings*') ? 'active' : '' }}" href="/settings">
+                        <span class="navIcon">@include('partials.icons.settings')</span>
+                        <span>{{ __('ui.nav_settings') }}</span>
+                    </a>
+                    <a class="navItem {{ request()->is('logs*') ? 'active' : '' }}" href="/logs">
+                        <span class="navIcon">@include('partials.icons.log')</span>
+                        <span>Logs</span>
+                    </a>
+                    <a class="navItem {{ request()->is('help*') ? 'active' : '' }}" href="/help">
+                        <span class="navIcon">@include('partials.icons.help')</span>
+                        <span>{{ __('ui.nav_help') }}</span>
+                    </a>
                 @endif
             @endif
         </nav>
@@ -61,6 +123,14 @@
             <button class="btnIcon" type="button" @click="mobileNav = !mobileNav" aria-label="Menu">☰</button>
             <div class="topbarTitle">@yield('page_title', '')</div>
             <div class="topbarRight">
+                @if(!$ctx->isSuperPanel() && $roleKey !== 'customer')
+                    <a class="pill" href="/notifications" title="Bildirimler" style="display:flex; align-items:center; gap:8px;">
+                        <span style="display:inline-flex; width:18px; height:18px;">@include('partials.icons.bell')</span>
+                        @if($notifUnread > 0)
+                            <span class="badge badgeDanger" style="padding:3px 8px; line-height:1;">{{ $notifUnread }}</span>
+                        @endif
+                    </a>
+                @endif
                 <a class="pill" href="?lang=tr">TR</a>
                 <a class="pill" href="?lang=en">EN</a>
             </div>

@@ -15,133 +15,113 @@ class StatsController extends Controller
         $ctx = app(TenantContext::class);
         $tenantId = $ctx->requireTenantId();
 
-        $period = $request->string('period')->toString();
-        if (!in_array($period, ['day', 'week', 'month'], true)) {
-            $period = 'week';
+        $days = (int) $request->input('days', 30);
+        if (!in_array($days, [7, 14, 30, 60, 90], true)) {
+            $days = 30;
         }
 
         $now = now();
-        $start = match ($period) {
-            'day' => $now->copy()->startOfDay(),
-            'month' => $now->copy()->subDays(29)->startOfDay(),
-            default => $now->copy()->subDays(6)->startOfDay(),
-        };
+        $start = $now->copy()->subDays($days - 1)->startOfDay();
 
-        $kpiToday = DB::table('leads')->where('tenant_id', $tenantId)->whereDate('created_at', $now->toDateString())->count();
-        $kpiWeek = DB::table('leads')->where('tenant_id', $tenantId)->where('created_at', '>=', $now->copy()->subDays(6)->startOfDay())->count();
-        $kpiMonth = DB::table('leads')->where('tenant_id', $tenantId)->where('created_at', '>=', $now->copy()->subDays(29)->startOfDay())->count();
+        $role = (string) ($request->user()->role?->key ?? '');
+        $uid = (int) $request->user()->id;
 
-        $kpiWon = DB::table('leads')
-            ->where('tenant_id', $tenantId)
-            ->where('created_at', '>=', $start)
-            ->where('status', 'won')
-            ->count();
-        $kpiLost = DB::table('leads')
-            ->where('tenant_id', $tenantId)
-            ->where('created_at', '>=', $start)
-            ->where('status', 'lost')
-            ->count();
-        $kpiTotal = DB::table('leads')
-            ->where('tenant_id', $tenantId)
-            ->where('created_at', '>=', $start)
-            ->count();
+        $threadsBase = DB::table('threads as t')
+            ->where('t.tenant_id', $tenantId)
+            ->where('t.created_at', '>=', $start);
 
-        $seriesStart = $now->copy()->subDays(13)->startOfDay();
-        $daily = DB::table('leads')
-            ->where('tenant_id', $tenantId)
-            ->where('created_at', '>=', $seriesStart)
-            ->select(
-                DB::raw('DATE(created_at) as d'),
-                DB::raw('COUNT(*) as total'),
-                DB::raw("SUM(CASE WHEN status='won' THEN 1 ELSE 0 END) as won"),
-                DB::raw("SUM(CASE WHEN status='lost' THEN 1 ELSE 0 END) as lost")
-            )
-            ->groupBy(DB::raw('DATE(created_at)'))
+        $messagesBase = DB::table('messages as m')
+            ->join('threads as t', 't.id', '=', 'm.thread_id')
+            ->where('m.tenant_id', $tenantId)
+            ->where('t.tenant_id', $tenantId)
+            ->where('m.created_at', '>=', $start);
+
+        $leadsBase = DB::table('leads as l')
+            ->where('l.tenant_id', $tenantId);
+
+        if ($role === 'staff') {
+            $threadsBase->leftJoin('leads as l', function ($join) use ($tenantId) {
+                $join->on('l.id', '=', 't.lead_id')->where('l.tenant_id', '=', $tenantId);
+            })->where(function ($qq) use ($uid) {
+                $qq->where('l.assigned_user_id', $uid)->orWhere('l.owner_user_id', $uid);
+            });
+
+            $messagesBase->leftJoin('leads as l', function ($join) use ($tenantId) {
+                $join->on('l.id', '=', 't.lead_id')->where('l.tenant_id', '=', $tenantId);
+            })->where(function ($qq) use ($uid) {
+                $qq->where('l.assigned_user_id', $uid)->orWhere('l.owner_user_id', $uid);
+            });
+
+            $leadsBase->where(function ($qq) use ($uid) {
+                $qq->where('l.assigned_user_id', $uid)->orWhere('l.owner_user_id', $uid);
+            });
+        }
+
+        $dailyThreads = (clone $threadsBase)
+            ->select(DB::raw('DATE(t.created_at) as d'), DB::raw('COUNT(*) as cnt'))
+            ->groupBy(DB::raw('DATE(t.created_at)'))
             ->orderBy('d')
             ->get();
 
-        // Fill missing days for chart continuity
-        $dailyMap = [];
-        foreach ($daily as $row) {
-            $dailyMap[(string) $row->d] = $row;
-        }
-        $dailyFilled = [];
-        for ($i = 13; $i >= 0; $i--) {
+        $dailyIn = (clone $messagesBase)
+            ->where('m.sender_type', 'contact')
+            ->select(DB::raw('DATE(m.created_at) as d'), DB::raw('COUNT(*) as cnt'))
+            ->groupBy(DB::raw('DATE(m.created_at)'))
+            ->orderBy('d')
+            ->get();
+
+        $dailyOut = (clone $messagesBase)
+            ->where('m.sender_type', 'user')
+            ->select(DB::raw('DATE(m.created_at) as d'), DB::raw('COUNT(*) as cnt'))
+            ->groupBy(DB::raw('DATE(m.created_at)'))
+            ->orderBy('d')
+            ->get();
+
+        $mapThreads = collect($dailyThreads)->keyBy('d');
+        $mapIn = collect($dailyIn)->keyBy('d');
+        $mapOut = collect($dailyOut)->keyBy('d');
+
+        $traffic = [];
+        for ($i = $days - 1; $i >= 0; $i--) {
             $d = $now->copy()->subDays($i)->toDateString();
-            $row = $dailyMap[$d] ?? (object) ['d' => $d, 'total' => 0, 'won' => 0, 'lost' => 0];
-            $dailyFilled[] = $row;
+            $traffic[] = (object) [
+                'd' => $d,
+                'threads' => (int) data_get($mapThreads->get($d), 'cnt', 0),
+                'in' => (int) data_get($mapIn->get($d), 'cnt', 0),
+                'out' => (int) data_get($mapOut->get($d), 'cnt', 0),
+            ];
         }
 
-        $statusDist = DB::table('leads')
-            ->where('tenant_id', $tenantId)
-            ->where('created_at', '>=', $start)
-            ->select('status', DB::raw('COUNT(*) as cnt'))
-            ->groupBy('status')
-            ->orderByDesc('cnt')
-            ->get();
+        $kpiThreads = (clone $threadsBase)->count();
+        $kpiMsgTotal = (clone $messagesBase)->count();
+        $kpiMsgIn = (clone $messagesBase)->where('m.sender_type', 'contact')->count();
+        $kpiMsgOut = (clone $messagesBase)->where('m.sender_type', 'user')->count();
 
-        $wonLeads = DB::table('leads')
-            ->where('tenant_id', $tenantId)
-            ->where('created_at', '>=', $start)
-            ->where('status', 'won')
-            ->orderByDesc('created_at')
-            ->limit(80)
-            ->get(['id', 'name', 'company', 'created_at', 'score']);
-        $lostLeads = DB::table('leads')
-            ->where('tenant_id', $tenantId)
-            ->where('created_at', '>=', $start)
-            ->where('status', 'lost')
-            ->orderByDesc('created_at')
-            ->limit(80)
-            ->get(['id', 'name', 'company', 'created_at', 'score']);
-
-        $leadsByStage = DB::table('lead_stages')
-            ->where('lead_stages.tenant_id', $tenantId)
-            ->leftJoin('leads', function ($join) use ($tenantId) {
-                $join->on('leads.stage_id', '=', 'lead_stages.id')
-                    ->where('leads.tenant_id', '=', $tenantId);
+        $leadsByStage = DB::table('lead_stages as s')
+            ->where('s.tenant_id', $tenantId)
+            ->leftJoin('leads as l', function ($join) use ($tenantId) {
+                $join->on('l.stage_id', '=', 's.id')->where('l.tenant_id', '=', $tenantId);
             })
-            ->select('lead_stages.name', DB::raw('COUNT(leads.id) as cnt'))
-            ->groupBy('lead_stages.id', 'lead_stages.name')
-            ->orderBy('lead_stages.sort_order')
-            ->get();
-
-        $messagesByType = DB::table('messages')
-            ->select('message_type', DB::raw('COUNT(*) as cnt'))
-            ->where('tenant_id', $tenantId)
-            ->groupBy('message_type')
-            ->orderByDesc('cnt')
-            ->get();
-
-        $staffPerformance = DB::table('users')
-            ->where('users.tenant_id', $tenantId)
-            ->leftJoin('messages', function ($join) use ($tenantId) {
-                $join->on('messages.sender_user_id', '=', 'users.id')
-                    ->where('messages.tenant_id', '=', $tenantId);
+            ->when($role === 'staff', function ($q) use ($uid) {
+                $q->where(function ($qq) use ($uid) {
+                    $qq->where('l.assigned_user_id', $uid)->orWhere('l.owner_user_id', $uid);
+                });
             })
-            ->select('users.name', DB::raw('COUNT(messages.id) as cnt'))
-            ->groupBy('users.id', 'users.name')
-            ->orderByDesc('cnt')
-            ->limit(10)
+            ->select('s.name', 's.color', DB::raw('COUNT(l.id) as cnt'))
+            ->groupBy('s.id', 's.name', 's.color')
+            ->orderBy('s.sort_order')
             ->get();
 
         return view('panel.stats.index', [
-            'period' => $period,
+            'days' => $days,
+            'traffic' => $traffic,
             'kpi' => [
-                'today' => $kpiToday,
-                'week' => $kpiWeek,
-                'month' => $kpiMonth,
-                'range_total' => $kpiTotal,
-                'range_won' => $kpiWon,
-                'range_lost' => $kpiLost,
+                'threads' => (int) $kpiThreads,
+                'messages_total' => (int) $kpiMsgTotal,
+                'messages_in' => (int) $kpiMsgIn,
+                'messages_out' => (int) $kpiMsgOut,
             ],
-            'dailySeries' => $dailyFilled,
-            'statusDist' => $statusDist,
-            'wonLeads' => $wonLeads,
-            'lostLeads' => $lostLeads,
             'leadsByStage' => $leadsByStage,
-            'messagesByType' => $messagesByType,
-            'staffPerformance' => $staffPerformance,
         ]);
     }
 }

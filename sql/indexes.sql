@@ -49,6 +49,7 @@ ALTER TABLE user_tenants
 ALTER TABLE contacts
   ADD KEY ix_contacts_tenant (tenant_id),
   ADD KEY ix_contacts_external (external_id),
+  ADD KEY ix_contacts_instagram (tenant_id, provider, instagram_user_id),
   ADD CONSTRAINT fk_contacts_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE;
 
 -- pipeline / leads
@@ -199,6 +200,13 @@ ALTER TABLE mail_messages
 ALTER TABLE tenant_settings
   ADD UNIQUE KEY ux_tenant_settings_key (tenant_id, `key`),
   ADD CONSTRAINT fk_tenant_settings_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE;
+
+-- Notifications
+ALTER TABLE notifications
+  ADD KEY ix_notifications_tenant (tenant_id),
+  ADD KEY ix_notifications_user (tenant_id, user_id, is_read, created_at),
+  ADD CONSTRAINT fk_notifications_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+  ADD CONSTRAINT fk_notifications_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE;
 
 -- Audit
 ALTER TABLE audit_logs

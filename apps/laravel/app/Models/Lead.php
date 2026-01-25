@@ -15,6 +15,7 @@ class Lead extends Model
         'tenant_id',
         'owner_user_id',
         'assigned_user_id',
+        'contact_id',
         'stage_id',
         'source',
         'status',

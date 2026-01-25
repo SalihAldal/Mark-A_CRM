@@ -254,6 +254,17 @@
             </form>
         </div>
 
+        @php($byProvider = ($integrationsByProvider ?? collect()))
+        @php($waAcc = $byProvider['whatsapp'] ?? $byProvider['wp'] ?? null)
+        @php($igAcc = $byProvider['instagram'] ?? null)
+        @php($tgAcc = $byProvider['telegram'] ?? null)
+        @php($waCfg = $waAcc ? (is_array($waAcc->config_json) ? $waAcc->config_json : (json_decode((string)($waAcc->config_json ?? ''), true) ?: [])) : [])
+        @php($igCfg = $igAcc ? (is_array($igAcc->config_json) ? $igAcc->config_json : (json_decode((string)($igAcc->config_json ?? ''), true) ?: [])) : [])
+        @php($tgCfg = $tgAcc ? (is_array($tgAcc->config_json) ? $tgAcc->config_json : (json_decode((string)($tgAcc->config_json ?? ''), true) ?: [])) : [])
+        @php($igTokenOk = !empty($igCfg['page_access_token']))
+        @php($waTokenOk = !empty($waCfg['access_token']))
+        @php($tgTokenOk = !empty($tgCfg['bot_token']))
+
         <div class="grid2" style="margin-top:12px;">
             <div class="card" style="box-shadow:none; background:#f8fafc;">
                 <div class="cardTitle">WhatsApp Cloud API</div>
@@ -263,13 +274,13 @@
                     <div class="filterRow r3wide">
                         <div class="filterField">
                             <div class="label">Ad</div>
-                            <input class="input" name="name" value="WhatsApp" required>
+                            <input class="input" name="name" value="{{ $waAcc ? $waAcc->name : 'WhatsApp' }}" required>
                         </div>
                         <div class="filterField">
                             <div class="label">Durum</div>
                             <select class="input" name="status">
-                                <option value="active">active</option>
-                                <option value="disabled" selected>disabled</option>
+                                <option value="active" @selected(($waAcc?->status ?? 'disabled') === 'active')>active</option>
+                                <option value="disabled" @selected(($waAcc?->status ?? 'disabled') !== 'active')>disabled</option>
                             </select>
                         </div>
                         <div class="filterActions">
@@ -279,15 +290,18 @@
                     <div class="filterRow r3">
                         <div class="filterField">
                             <div class="label">Phone Number ID</div>
-                            <input class="input" name="config[phone_number_id]" placeholder="Meta phone_number_id">
+                            <input class="input" name="config[phone_number_id]" value="{{ $waCfg['phone_number_id'] ?? '' }}" placeholder="Meta phone_number_id">
                         </div>
                         <div class="filterField">
                             <div class="label">Access Token</div>
-                            <input class="input" name="config[access_token]" placeholder="Permanent token">
+                            <input class="input" type="password" name="config[access_token]" placeholder="•••••• (değiştirmek için yaz)">
+                            <div class="muted" style="font-size:12px; margin-top:6px;">
+                                {{ $waTokenOk ? 'Token: kayıtlı' : 'Token: eksik' }}
+                            </div>
                         </div>
                         <div class="filterField">
                             <div class="label">Verify Token (Webhook)</div>
-                            <input class="input" name="config[verify_token]" placeholder="Boş bırakırsan otomatik üretir">
+                            <div class="muted" style="font-size:12px; padding-top:10px;">Tek kaynak: <code>.env</code> → <code>META_VERIFY_TOKEN</code></div>
                         </div>
                     </div>
                 </form>
@@ -301,13 +315,13 @@
                     <div class="filterRow r3wide">
                         <div class="filterField">
                             <div class="label">Ad</div>
-                            <input class="input" name="name" value="Instagram" required>
+                            <input class="input" name="name" value="{{ $igAcc ? $igAcc->name : 'Instagram' }}" required>
                         </div>
                         <div class="filterField">
                             <div class="label">Durum</div>
                             <select class="input" name="status">
-                                <option value="active">active</option>
-                                <option value="disabled" selected>disabled</option>
+                                <option value="active" @selected(($igAcc?->status ?? 'disabled') === 'active')>active</option>
+                                <option value="disabled" @selected(($igAcc?->status ?? 'disabled') !== 'active')>disabled</option>
                             </select>
                         </div>
                         <div class="filterActions">
@@ -316,16 +330,19 @@
                     </div>
                     <div class="filterRow r3">
                         <div class="filterField">
-                            <div class="label">Page ID</div>
-                            <input class="input" name="config[page_id]" placeholder="Facebook Page ID">
+                            <div class="label">IG Account ID (entry.id)</div>
+                            <input class="input" name="config[page_id]" value="{{ $igCfg['page_id'] ?? '' }}" placeholder="örn: 1784...">
                         </div>
                         <div class="filterField">
                             <div class="label">Page Access Token</div>
-                            <input class="input" name="config[page_access_token]" placeholder="Long-lived page token">
+                            <input class="input" type="password" name="config[page_access_token]" placeholder="•••••• (değiştirmek için yaz)">
+                            <div class="muted" style="font-size:12px; margin-top:6px;">
+                                {{ $igTokenOk ? 'Token: kayıtlı' : 'Token: eksik (cevap atamazsın)' }}
+                            </div>
                         </div>
                         <div class="filterField">
                             <div class="label">Verify Token (Webhook)</div>
-                            <input class="input" name="config[verify_token]" placeholder="Boş bırakırsan otomatik üretir">
+                            <div class="muted" style="font-size:12px; padding-top:10px;">Tek kaynak: <code>.env</code> → <code>META_VERIFY_TOKEN</code></div>
                         </div>
                     </div>
                 </form>
@@ -339,13 +356,13 @@
                     <div class="filterRow r3wide">
                         <div class="filterField">
                             <div class="label">Ad</div>
-                            <input class="input" name="name" value="Telegram" required>
+                            <input class="input" name="name" value="{{ $tgAcc ? $tgAcc->name : 'Telegram' }}" required>
                         </div>
                         <div class="filterField">
                             <div class="label">Durum</div>
                             <select class="input" name="status">
-                                <option value="active">active</option>
-                                <option value="disabled" selected>disabled</option>
+                                <option value="active" @selected(($tgAcc?->status ?? 'disabled') === 'active')>active</option>
+                                <option value="disabled" @selected(($tgAcc?->status ?? 'disabled') !== 'active')>disabled</option>
                             </select>
                         </div>
                         <div class="filterActions">
@@ -356,10 +373,13 @@
                         <div class="filterField" style="grid-column: 1 / -1;">
                             <div class="label">Bot Token</div>
                             <input class="input" name="config[bot_token]" placeholder="123456:ABC-DEF...">
+                            <div class="muted" style="font-size:12px; margin-top:6px;">
+                                {{ $tgTokenOk ? 'Token: kayıtlı' : 'Token: eksik' }}
+                            </div>
                         </div>
                         <div class="filterField" style="grid-column: 1 / -1;">
                             <div class="label">Webhook Secret Token (opsiyonel)</div>
-                            <input class="input" name="webhook_secret" placeholder="Telegram webhook secret header">
+                            <input class="input" name="webhook_secret" value="{{ $tgAcc ? ($tgAcc->webhook_secret ?? '') : '' }}" placeholder="Telegram webhook secret header">
                         </div>
                     </div>
                 </form>
@@ -396,18 +416,18 @@
                             @if($i->provider === 'whatsapp')
                                 <div class="filters2" style="grid-template-columns: 1fr 1fr 1fr; gap:10px; margin:0;">
                                     <input class="input" name="config[phone_number_id]" value="{{ $cfg['phone_number_id'] ?? '' }}" placeholder="phone_number_id" form="{{ $fid }}">
-                                    <input class="input" name="config[access_token]" value="{{ $cfg['access_token'] ?? '' }}" placeholder="access_token" form="{{ $fid }}">
-                                    <input class="input" name="config[verify_token]" value="{{ $cfg['verify_token'] ?? '' }}" placeholder="verify_token" form="{{ $fid }}">
+                                    <input class="input" type="password" name="config[access_token]" value="" placeholder="•••••• (kayıtlı, değiştirmek için yaz)" form="{{ $fid }}">
+                                    <input class="input" value="META_VERIFY_TOKEN (.env)" placeholder="verify_token" disabled>
                                 </div>
                             @elseif($i->provider === 'instagram')
                                 <div class="filters2" style="grid-template-columns: 1fr 1fr 1fr; gap:10px; margin:0;">
                                     <input class="input" name="config[page_id]" value="{{ $cfg['page_id'] ?? '' }}" placeholder="page_id" form="{{ $fid }}">
-                                    <input class="input" name="config[page_access_token]" value="{{ $cfg['page_access_token'] ?? '' }}" placeholder="page_access_token" form="{{ $fid }}">
-                                    <input class="input" name="config[verify_token]" value="{{ $cfg['verify_token'] ?? '' }}" placeholder="verify_token" form="{{ $fid }}">
+                                    <input class="input" type="password" name="config[page_access_token]" value="" placeholder="•••••• (kayıtlı, değiştirmek için yaz)" form="{{ $fid }}">
+                                    <input class="input" value="META_VERIFY_TOKEN (.env)" placeholder="verify_token" disabled>
                                 </div>
                             @elseif($i->provider === 'telegram')
                                 <div class="filters2" style="grid-template-columns: 1fr 1fr; gap:10px; margin:0;">
-                                    <input class="input" name="config[bot_token]" value="{{ $cfg['bot_token'] ?? '' }}" placeholder="bot_token" form="{{ $fid }}">
+                                    <input class="input" type="password" name="config[bot_token]" value="" placeholder="•••••• (kayıtlı, değiştirmek için yaz)" form="{{ $fid }}">
                                     <input class="input" name="webhook_secret" value="{{ $i->webhook_secret ?? '' }}" placeholder="secret token (ops.)" form="{{ $fid }}">
                                 </div>
                             @else

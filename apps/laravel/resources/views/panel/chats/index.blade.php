@@ -71,9 +71,16 @@
                                     <span class="platformIcon">{!! platform_svg($t->channel) !!}</span>
                                     <div style="min-width:0;">
                                         <div style="font-weight:1000; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
-                                            {{ $t->lead_name ?? $t->contact_name ?? ('Thread #' . $t->id) }}
+                                            @php($isIntegration = in_array(strtolower((string)($t->channel ?? '')), ['instagram','whatsapp','wp','telegram'], true))
+                                            {{ $isIntegration ? ($t->contact_name ?? $t->lead_name ?? ('Thread #' . $t->id)) : ($t->lead_name ?? $t->contact_name ?? ('Thread #' . $t->id)) }}
                                         </div>
-                                        <div class="muted">{{ $t->status }}</div>
+                                        <div class="muted">
+                                            @if(!empty($t->contact_username))
+                                                <span>@{{ $t->contact_username }}</span>
+                                                <span style="padding:0 6px;">•</span>
+                                            @endif
+                                            <span>{{ $t->status }}</span>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -100,8 +107,14 @@
                         <div style="min-width:0;">
                             <div style="display:flex; align-items:center; gap:10px;">
                                 <span class="platformIcon">{!! platform_svg($selected->channel) !!}</span>
-                                <div style="font-weight:1000">
-                                    {{ $selected->lead_name ?? $selected->contact_name ?? ('Thread #' . $selected->id) }}
+                                <div style="min-width:0;">
+                                    <div style="font-weight:1000; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+                                        @php($isIntegrationSel = in_array(strtolower((string)($selected->channel ?? '')), ['instagram','whatsapp','wp','telegram'], true))
+                                        {{ $isIntegrationSel ? ($selected->contact_name ?? $selected->lead_name ?? ('Thread #' . $selected->id)) : ($selected->lead_name ?? $selected->contact_name ?? ('Thread #' . $selected->id)) }}
+                                    </div>
+                                    @if(!empty($selected->contact_username))
+                                        <div class="muted">@{{ $selected->contact_username }}</div>
+                                    @endif
                                 </div>
                             </div>
                             <div class="muted">Durum: {{ $selected->status }}</div>

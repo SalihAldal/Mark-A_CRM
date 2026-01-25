@@ -134,21 +134,76 @@ class LeadController extends Controller
             }
         }
 
-        $lead = Lead::query()->create([
-            'owner_user_id' => $request->user()->id,
-            'assigned_user_id' => $assignedId,
-            'stage_id' => $stageId,
-            'source' => (string) $data['source'],
-            'status' => (string) $data['status'],
-            'score' => 0,
-            'name' => trim((string) $data['name']),
-            'phone' => $data['phone'] ? trim((string) $data['phone']) : null,
-            'email' => $data['email'] ? trim((string) $data['email']) : null,
-            'company' => $data['company'] ? trim((string) $data['company']) : null,
-            'notes' => $data['notes'] ? trim((string) $data['notes']) : null,
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
+        $lead = null;
+        DB::transaction(function () use ($request, $tenantId, $assignedId, $stageId, $data, &$lead) {
+            $lead = Lead::query()->create([
+                'owner_user_id' => $request->user()->id,
+                'assigned_user_id' => $assignedId,
+                'stage_id' => $stageId,
+                'source' => (string) $data['source'],
+                'status' => (string) $data['status'],
+                'score' => 0,
+                'name' => trim((string) $data['name']),
+                'phone' => $data['phone'] ? trim((string) $data['phone']) : null,
+                'email' => $data['email'] ? trim((string) $data['email']) : null,
+                'company' => $data['company'] ? trim((string) $data['company']) : null,
+                'notes' => $data['notes'] ? trim((string) $data['notes']) : null,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+
+            // Notify all staff users in tenant
+            $staffIds = DB::table('users as u')
+                ->join('roles as r', 'r.id', '=', 'u.role_id')
+                ->where('u.tenant_id', $tenantId)
+                ->where('r.tenant_id', $tenantId)
+                ->where('r.key', 'staff')
+                ->pluck('u.id')
+                ->map(fn ($x) => (int) $x)
+                ->values()
+                ->all();
+
+            if (!empty($staffIds)) {
+                $now = now();
+                $rows = [];
+                foreach ($staffIds as $uid) {
+                    $rows[] = [
+                        'tenant_id' => $tenantId,
+                        'user_id' => $uid,
+                        'type' => 'lead_created',
+                        'title' => 'Yeni lead',
+                        'body' => $lead->name . ' • ' . $lead->source . ' • Durum: ' . $lead->status,
+                        'entity_type' => 'lead',
+                        'entity_id' => $lead->id,
+                        'is_read' => 0,
+                        'read_at' => null,
+                        'created_at' => $now,
+                    ];
+                }
+                DB::table('notifications')->insert($rows);
+            }
+
+            // Audit
+            DB::table('audit_logs')->insert([
+                'tenant_id' => $tenantId,
+                'actor_user_id' => $request->user()->id,
+                'action' => 'lead.create',
+                'entity_type' => 'lead',
+                'entity_id' => $lead->id,
+                'ip' => $request->ip(),
+                'user_agent' => substr((string) $request->userAgent(), 0, 255),
+                'metadata_json' => json_encode([
+                    'assigned_user_id' => $assignedId ? (int) $assignedId : null,
+                    'status' => (string) $data['status'],
+                    'source' => (string) $data['source'],
+                ], JSON_UNESCAPED_UNICODE),
+                'created_at' => now(),
+            ]);
+        });
+
+        if (!$lead) {
+            return redirect()->back()->with('status', 'Lead oluşturulamadı.');
+        }
 
         return redirect()->to('/leads/' . $lead->id)->with('status', 'Lead eklendi.');
     }
@@ -197,7 +252,7 @@ class LeadController extends Controller
         }
 
         $from = $lead->stage_id;
-        DB::transaction(function () use ($lead, $toStageId, $from, $data) {
+        DB::transaction(function () use ($lead, $toStageId, $from, $data, $tenantId, $request) {
             $lead->stage_id = $toStageId;
             $lead->save();
 
@@ -207,6 +262,22 @@ class LeadController extends Controller
                 'to_stage_id' => $toStageId,
                 'moved_by_user_id' => auth()->id(),
                 'reason' => $data['reason'] ?? null,
+                'created_at' => now(),
+            ]);
+
+            DB::table('audit_logs')->insert([
+                'tenant_id' => $tenantId,
+                'actor_user_id' => $request->user()->id,
+                'action' => 'lead.stage_move',
+                'entity_type' => 'lead',
+                'entity_id' => $lead->id,
+                'ip' => $request->ip(),
+                'user_agent' => substr((string) $request->userAgent(), 0, 255),
+                'metadata_json' => json_encode([
+                    'from_stage_id' => $from ? (int) $from : null,
+                    'to_stage_id' => $toStageId ? (int) $toStageId : null,
+                    'reason' => $data['reason'] ?? null,
+                ], JSON_UNESCAPED_UNICODE),
                 'created_at' => now(),
             ]);
         });
@@ -255,6 +326,14 @@ class LeadController extends Controller
             ->get(['id', 'name'])
             ->keyBy('id');
 
+        $assignableUsers = collect();
+        if ((string) ($request->user()->role?->key ?? '') === 'tenant_admin') {
+            $assignableUsers = User::query()
+                ->where('tenant_id', $tenantId)
+                ->orderBy('name')
+                ->get(['id', 'name']);
+        }
+
         return view('panel.leads.show', [
             'lead' => $lead,
             'stage' => $stage,
@@ -262,7 +341,65 @@ class LeadController extends Controller
             'threadId' => $threadId,
             'notes' => $notes,
             'noteAuthors' => $noteAuthors,
+            'assignableUsers' => $assignableUsers,
         ]);
+    }
+
+    public function assign(Request $request, Lead $lead)
+    {
+        $this->authorizeLeadAccess($request, $lead);
+
+        /** @var TenantContext $ctx */
+        $ctx = app(TenantContext::class);
+        $tenantId = $ctx->requireTenantId();
+
+        $data = $request->validate([
+            'assigned_user_id' => ['nullable', 'integer'],
+        ]);
+
+        $assignedId = $data['assigned_user_id'] ? (int) $data['assigned_user_id'] : null;
+        if ($assignedId !== null) {
+            $exists = User::query()->where('tenant_id', $tenantId)->where('id', $assignedId)->exists();
+            if (!$exists) {
+                $assignedId = null;
+            }
+        }
+
+        $from = $lead->assigned_user_id ? (int) $lead->assigned_user_id : null;
+
+        DB::transaction(function () use ($lead, $tenantId, $from, $assignedId, $request) {
+            $lead->assigned_user_id = $assignedId;
+            $lead->save();
+
+            DB::table('audit_logs')->insert([
+                'tenant_id' => $tenantId,
+                'actor_user_id' => $request->user()->id,
+                'action' => 'lead.assign',
+                'entity_type' => 'lead',
+                'entity_id' => $lead->id,
+                'ip' => $request->ip(),
+                'user_agent' => substr((string) $request->userAgent(), 0, 255),
+                'metadata_json' => json_encode(['from' => $from, 'to' => $assignedId], JSON_UNESCAPED_UNICODE),
+                'created_at' => now(),
+            ]);
+
+            if ($assignedId) {
+                DB::table('notifications')->insert([
+                    'tenant_id' => $tenantId,
+                    'user_id' => $assignedId,
+                    'type' => 'lead_assigned',
+                    'title' => 'Lead atandı',
+                    'body' => $lead->name . ' lead’i sana atandı.',
+                    'entity_type' => 'lead',
+                    'entity_id' => $lead->id,
+                    'is_read' => 0,
+                    'read_at' => null,
+                    'created_at' => now(),
+                ]);
+            }
+        });
+
+        return redirect()->to('/leads/' . $lead->id)->with('status', 'Atama güncellendi.');
     }
 
     public function addNote(Request $request, Lead $lead)

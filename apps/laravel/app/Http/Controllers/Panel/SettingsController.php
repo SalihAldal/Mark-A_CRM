@@ -12,7 +12,6 @@ use App\Support\TenantContext;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Str;
 
 class SettingsController extends Controller
 {
@@ -25,6 +24,10 @@ class SettingsController extends Controller
         $rules = AiRule::query()->orderByDesc('id')->paginate(20);
         $stages = LeadStage::query()->orderBy('sort_order')->orderBy('id')->get();
         $integrations = IntegrationAccount::query()->orderByDesc('id')->get();
+        // Convenience map for Settings UI (prefill forms by provider). If multiple exist, pick the latest.
+        $integrationsByProvider = $integrations
+            ->groupBy('provider')
+            ->map(fn ($g) => $g->first());
         $staff = DB::table('users')
             ->where('users.tenant_id', $tenantId)
             ->leftJoin('roles', 'roles.id', '=', 'users.role_id')
@@ -51,6 +54,7 @@ class SettingsController extends Controller
             'rules' => $rules,
             'stages' => $stages,
             'integrations' => $integrations,
+            'integrationsByProvider' => $integrationsByProvider,
             'staff' => $staff,
             'mail' => $mail,
         ]);
@@ -167,6 +171,10 @@ class SettingsController extends Controller
 
     public function storeIntegration(Request $request)
     {
+        /** @var TenantContext $ctx */
+        $ctx = app(TenantContext::class);
+        $tenantId = $ctx->requireTenantId();
+
         $data = $request->validate([
             'provider' => ['required', 'in:instagram,whatsapp,telegram'],
             'name' => ['required', 'string', 'max:160'],
@@ -187,19 +195,62 @@ class SettingsController extends Controller
             }
         }
 
-        // Auto-generate verify_token if missing (Meta)
-        if (in_array($data['provider'], ['instagram', 'whatsapp'], true) && empty($cfg['verify_token'])) {
-            $cfg['verify_token'] = 'verify_' . Str::random(24);
+        // Meta verify token is single-source in .env (META_VERIFY_TOKEN). Ignore any per-integration input.
+        unset($cfg['verify_token']);
+
+        // Keep secrets if record already exists and user left them empty
+        $secretKeys = ['access_token', 'page_access_token', 'bot_token'];
+        $existing = IntegrationAccount::query()
+            ->where('tenant_id', $tenantId)
+            ->where('provider', $data['provider'])
+            ->first();
+        $baseCfg = is_array($existing?->config_json) ? $existing?->config_json : (json_decode((string) ($existing?->config_json ?? ''), true) ?: []);
+
+        foreach ($secretKeys as $k) {
+            if (array_key_exists($k, $cfg) && empty($cfg[$k]) && !empty($baseCfg[$k])) {
+                unset($cfg[$k]); // don't overwrite existing secret with null
+            }
         }
 
-        IntegrationAccount::query()->create([
-            'provider' => $data['provider'],
+        $finalCfg = array_merge($baseCfg, $cfg);
+
+        // Validate required fields when enabling integrations (prevents "active but cannot send/receive").
+        $provider = (string) $data['provider'];
+        $status = (string) $data['status'];
+        if ($status === 'active') {
+            if ($provider === 'instagram') {
+                if (empty($finalCfg['page_id']) || empty($finalCfg['page_access_token'])) {
+                    return redirect()->to('/settings#settings-integrations')
+                        ->with('status', 'Instagram için active yapmadan önce IG Account ID (entry.id) ve Page Access Token girmen lazım.');
+                }
+            } elseif ($provider === 'whatsapp') {
+                if (empty($finalCfg['phone_number_id']) || empty($finalCfg['access_token'])) {
+                    return redirect()->to('/settings#settings-integrations')
+                        ->with('status', 'WhatsApp için active yapmadan önce phone_number_id ve access_token girmen lazım.');
+                }
+            } elseif ($provider === 'telegram') {
+                if (empty($finalCfg['bot_token'])) {
+                    return redirect()->to('/settings#settings-integrations')
+                        ->with('status', 'Telegram için active yapmadan önce bot_token girmen lazım.');
+                }
+            }
+        }
+
+        $values = [
             'name' => trim($data['name']),
             'status' => $data['status'],
-            'config_json' => json_encode($cfg, JSON_UNESCAPED_UNICODE),
+            'config_json' => json_encode($finalCfg, JSON_UNESCAPED_UNICODE),
             'webhook_secret' => $data['webhook_secret'] ?? null,
-            'created_at' => now(),
-        ]);
+            'updated_at' => now(),
+        ];
+        if (!$existing) {
+            $values['created_at'] = now();
+        }
+
+        IntegrationAccount::query()->updateOrCreate(
+            ['tenant_id' => $tenantId, 'provider' => $data['provider']],
+            $values
+        );
 
         return redirect()->to('/settings')->with('status', 'Entegrasyon kaydedildi.');
     }
@@ -223,10 +274,45 @@ class SettingsController extends Controller
             }
         }
 
+        // Meta verify token is single-source in .env (META_VERIFY_TOKEN). Ignore any per-integration input.
+        unset($cfg['verify_token']);
+
+        // Don't wipe secrets if left blank
+        $existingCfg = is_array($acc->config_json) ? $acc->config_json : (json_decode((string) ($acc->config_json ?? ''), true) ?: []);
+        $secretKeys = ['access_token', 'page_access_token', 'bot_token'];
+        foreach ($secretKeys as $k) {
+            if (array_key_exists($k, $cfg) && empty($cfg[$k]) && !empty($existingCfg[$k])) {
+                unset($cfg[$k]);
+            }
+        }
+        $finalCfg = array_merge($existingCfg, $cfg);
+
+        // Validate required fields when enabling integrations.
+        $provider = (string) ($acc->provider ?? '');
+        $status = (string) $data['status'];
+        if ($status === 'active') {
+            if ($provider === 'instagram') {
+                if (empty($finalCfg['page_id']) || empty($finalCfg['page_access_token'])) {
+                    return redirect()->to('/settings#settings-integrations')
+                        ->with('status', 'Instagram için active yapmadan önce IG Account ID (entry.id) ve Page Access Token girmen lazım.');
+                }
+            } elseif ($provider === 'whatsapp' || $provider === 'wp') {
+                if (empty($finalCfg['phone_number_id']) || empty($finalCfg['access_token'])) {
+                    return redirect()->to('/settings#settings-integrations')
+                        ->with('status', 'WhatsApp için active yapmadan önce phone_number_id ve access_token girmen lazım.');
+                }
+            } elseif ($provider === 'telegram') {
+                if (empty($finalCfg['bot_token'])) {
+                    return redirect()->to('/settings#settings-integrations')
+                        ->with('status', 'Telegram için active yapmadan önce bot_token girmen lazım.');
+                }
+            }
+        }
+
         $acc->fill([
             'name' => trim($data['name']),
             'status' => $data['status'],
-            'config_json' => json_encode($cfg, JSON_UNESCAPED_UNICODE),
+            'config_json' => json_encode($finalCfg, JSON_UNESCAPED_UNICODE),
             'webhook_secret' => $data['webhook_secret'] ?? null,
         ]);
         $acc->save();
@@ -252,7 +338,7 @@ class SettingsController extends Controller
                 [
                     'name' => 'WhatsApp Demo',
                     'status' => 'disabled',
-                    'config_json' => json_encode(['phone_number_id' => 'YOUR_PHONE_NUMBER_ID', 'access_token' => 'YOUR_TOKEN', 'verify_token' => 'verify_demo_whatsapp'], JSON_UNESCAPED_UNICODE),
+                    'config_json' => json_encode(['phone_number_id' => 'YOUR_PHONE_NUMBER_ID', 'access_token' => 'YOUR_TOKEN'], JSON_UNESCAPED_UNICODE),
                     'webhook_secret' => null,
                     'created_at' => now(),
                 ]
@@ -262,7 +348,7 @@ class SettingsController extends Controller
                 [
                     'name' => 'Instagram Demo',
                     'status' => 'disabled',
-                    'config_json' => json_encode(['page_id' => 'YOUR_PAGE_ID', 'page_access_token' => 'YOUR_TOKEN', 'verify_token' => 'verify_demo_instagram'], JSON_UNESCAPED_UNICODE),
+                    'config_json' => json_encode(['page_id' => 'YOUR_PAGE_ID', 'page_access_token' => 'YOUR_TOKEN'], JSON_UNESCAPED_UNICODE),
                     'webhook_secret' => null,
                     'created_at' => now(),
                 ]

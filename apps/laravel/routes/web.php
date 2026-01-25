@@ -10,11 +10,15 @@ use App\Http\Controllers\Panel\LeadController;
 use App\Http\Controllers\Panel\ListsController;
 use App\Http\Controllers\Panel\MailController;
 use App\Http\Controllers\Panel\MessageController;
+use App\Http\Controllers\Panel\NotificationsController;
+use App\Http\Controllers\Panel\LogsController;
 use App\Http\Controllers\Panel\SettingsController;
 use App\Http\Controllers\Panel\StatsController;
 use App\Http\Controllers\Panel\SupportBotController;
 use App\Http\Controllers\RealtimeTokenController;
 use App\Http\Controllers\Super\DashboardController as SuperDashboardController;
+use App\Http\Controllers\Super\TenantsController as SuperTenantsController;
+use App\Http\Controllers\Super\SystemController as SuperSystemController;
 use App\Http\Controllers\Webhooks\MetaWebhookController;
 use App\Http\Controllers\Webhooks\TelegramWebhookController;
 use Illuminate\Support\Facades\Route;
@@ -59,6 +63,7 @@ Route::middleware('web')->group(function () {
         Route::get('/leads/kanban', [LeadController::class, 'kanban'])->middleware('role:tenant_admin|staff');
         Route::get('/leads/{lead}', [LeadController::class, 'show'])->middleware('role:tenant_admin|staff|customer');
         Route::post('/leads/{lead}/notes', [LeadController::class, 'addNote'])->middleware('role:tenant_admin|staff');
+        Route::post('/leads/{lead}/assign', [LeadController::class, 'assign'])->middleware('role:tenant_admin');
         Route::post('/leads/{lead}/move-stage', [LeadController::class, 'moveStage'])->middleware('role:tenant_admin|staff');
 
         // Chats
@@ -84,6 +89,15 @@ Route::middleware('web')->group(function () {
 
         Route::get('/stats', [StatsController::class, 'index'])->middleware('role:tenant_admin|staff|customer');
 
+        // Notifications
+        Route::get('/notifications', [NotificationsController::class, 'index'])->middleware('role:tenant_admin|staff');
+        Route::post('/notifications/{notification}/read', [NotificationsController::class, 'markRead'])->middleware('role:tenant_admin|staff');
+        Route::post('/notifications/{notification}/claim', [NotificationsController::class, 'claim'])->middleware('role:tenant_admin|staff');
+        Route::post('/notifications/{notification}/release', [NotificationsController::class, 'release'])->middleware('role:tenant_admin|staff');
+
+        // Logs
+        Route::get('/logs', [LogsController::class, 'index'])->middleware('role:tenant_admin|staff');
+
         // Settings (AI rules)
         Route::get('/settings', [SettingsController::class, 'index'])->middleware('role:tenant_admin');
         Route::post('/settings/ai-rules', [SettingsController::class, 'saveAiRules'])->middleware('role:tenant_admin');
@@ -106,7 +120,22 @@ Route::middleware('web')->group(function () {
 
     Route::middleware(['auth', 'panel.super', 'role:superadmin'])->group(function () {
         Route::get('/super', [SuperDashboardController::class, 'index'])->name('super.dashboard');
-        Route::view('/super/tenants', 'super.tenants.index');
-        Route::view('/super/settings', 'super.settings.index');
+
+        // Super: Tenants
+        Route::get('/super/tenants', [SuperTenantsController::class, 'index'])->name('super.tenants.index');
+        Route::post('/super/tenants', [SuperTenantsController::class, 'store'])->name('super.tenants.store');
+        Route::get('/super/tenants/{tenant}', [SuperTenantsController::class, 'show'])->name('super.tenants.show');
+        Route::post('/super/tenants/{tenant}', [SuperTenantsController::class, 'update'])->name('super.tenants.update');
+        Route::post('/super/tenants/{tenant}/domains', [SuperTenantsController::class, 'addDomain'])->name('super.tenants.domains.add');
+        Route::post('/super/domains/{domain}/primary', [SuperTenantsController::class, 'setPrimaryDomain'])->name('super.domains.primary');
+        Route::post('/super/domains/{domain}/toggle', [SuperTenantsController::class, 'toggleDomain'])->name('super.domains.toggle');
+        Route::post('/super/tenants/{tenant}/users', [SuperTenantsController::class, 'addUser'])->name('super.tenants.users.add');
+
+        // Super: System Settings
+        Route::get('/super/settings', [SuperSystemController::class, 'index'])->name('super.settings.index');
+        Route::post('/super/settings/super-domains', [SuperSystemController::class, 'addSuperDomain'])->name('super.settings.super_domains.add');
+        Route::post('/super/settings/super-domains/{domain}/toggle', [SuperSystemController::class, 'toggleSuperDomain'])->name('super.settings.super_domains.toggle');
+        Route::post('/super/settings/templates', [SuperSystemController::class, 'createTemplate'])->name('super.settings.templates.create');
+        Route::post('/super/settings/templates/{template}', [SuperSystemController::class, 'updateTemplate'])->name('super.settings.templates.update');
     });
 });
