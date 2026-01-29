@@ -84,5 +84,58 @@
             {{ $lists->links() }}
         </div>
     </div>
+
+    <div class="card" style="margin-top:14px; padding:0;">
+        <div class="toolbar" style="justify-content:space-between; padding:14px 16px;">
+            <div>
+                <div class="pageTitle" style="font-size:16px;">Müşteriler</div>
+                <div class="muted">Lead kayıtlarındaki müşteri listesi</div>
+            </div>
+        </div>
+        <div class="tableWrap">
+            <table class="table">
+                <thead>
+                <tr>
+                    <th style="padding-left:16px;">Müşteri</th>
+                    <th class="muted">İletişim</th>
+                    <th>Devralan</th>
+                    <th>Kaynak</th>
+                    <th>Durum</th>
+                    <th style="padding-right:16px; text-align:right;">Aksiyon</th>
+                </tr>
+                </thead>
+                <tbody>
+                @forelse(($leadCustomers ?? []) as $c)
+                    <tr>
+                        <td style="padding-left:16px;">
+                            <div style="font-weight:1000">{{ data_get($c,'name','') }}</div>
+                            <div class="muted">#{{ (int) data_get($c,'id',0) }}</div>
+                        </td>
+                        <td class="muted">
+                            {{ data_get($c,'email') ?: '—' }} • {{ data_get($c,'phone') ?: '—' }}
+                        </td>
+                        <td>{{ data_get($c,'assigned_name') ?: '—' }}</td>
+                        <td>{{ data_get($c,'source') ?: '—' }}</td>
+                        <td>
+                            @php($st = (string) data_get($c,'status',''))
+                            @if($st === 'won')
+                                <span class="badge badgeSuccess">won</span>
+                            @elseif($st === 'lost')
+                                <span class="badge badgeDanger">lost</span>
+                            @else
+                                <span class="badge badgeSuccess">active</span>
+                            @endif
+                        </td>
+                        <td style="padding-right:16px; text-align:right;">
+                            <a class="btn" href="/leads/{{ (int) data_get($c,'id',0) }}">Aç</a>
+                        </td>
+                    </tr>
+                @empty
+                    <tr><td colspan="6" class="muted" style="padding:16px;">Kayıt yok.</td></tr>
+                @endforelse
+                </tbody>
+            </table>
+        </div>
+    </div>
 @endsection
 

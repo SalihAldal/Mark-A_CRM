@@ -330,8 +330,14 @@
                     </div>
                     <div class="filterRow r3">
                         <div class="filterField">
-                            <div class="label">IG Account ID (entry.id)</div>
-                            <input class="input" name="config[page_id]" value="{{ $igCfg['page_id'] ?? '' }}" placeholder="örn: 1784...">
+                            <div class="label">Facebook Page ID</div>
+                            <input class="input" name="config[page_id]" value="{{ (string)($igCfg['page_id'] ?? '') }}" placeholder="örn: 908670365670378">
+                        </div>
+                        <div class="filterField">
+                            <div class="label">IG Business Account ID (webhook entry.id)</div>
+                            @php($igBiz = (string)($igCfg['ig_business_id'] ?? ''))
+                            @php($legacyMaybeIg = (string)($igCfg['page_id'] ?? ''))
+                            <input class="input" name="config[ig_business_id]" value="{{ $igBiz !== '' ? $igBiz : (str_starts_with($legacyMaybeIg,'1784') ? $legacyMaybeIg : '') }}" placeholder="örn: 17841478140523860">
                         </div>
                         <div class="filterField">
                             <div class="label">Page Access Token</div>
@@ -340,9 +346,10 @@
                                 {{ $igTokenOk ? 'Token: kayıtlı' : 'Token: eksik (cevap atamazsın)' }}
                             </div>
                         </div>
-                        <div class="filterField">
-                            <div class="label">Verify Token (Webhook)</div>
-                            <div class="muted" style="font-size:12px; padding-top:10px;">Tek kaynak: <code>.env</code> → <code>META_VERIFY_TOKEN</code></div>
+                    </div>
+                    <div class="filterRow">
+                        <div class="muted" style="font-size:12px;">
+                            Verify Token (Webhook) tek kaynak: <code>.env</code> → <code>META_VERIFY_TOKEN</code>
                         </div>
                     </div>
                 </form>

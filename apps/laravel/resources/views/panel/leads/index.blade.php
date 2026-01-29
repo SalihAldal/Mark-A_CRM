@@ -111,7 +111,18 @@
                                 • #{{ $lead->id }} • {{ \Illuminate\Support\Carbon::parse($lead->created_at)->format('d.m.Y H:i') }}
                             </div>
                         </td>
-                        <td>{{ $lead->assigned_name ?? '—' }}</td>
+                        <td>
+                            @if((string)(auth()->user()->role?->key ?? '') === 'tenant_admin')
+                                <select class="input js-assign-lead" data-lead-id="{{ (int)$lead->id }}" style="min-width:190px;">
+                                    <option value="">—</option>
+                                    @foreach($users as $u)
+                                        <option value="{{ (int)$u->id }}" @selected((int)($lead->assigned_user_id ?? 0) === (int)$u->id)>{{ $u->name }}</option>
+                                    @endforeach
+                                </select>
+                            @else
+                                {{ $lead->assigned_name ?? '—' }}
+                            @endif
+                        </td>
                         <td>{{ $lead->source }}</td>
                         <td>
                             <span class="badge badgeNeutral">{{ $lead->stage_name ?? '-' }}</span>
@@ -141,5 +152,58 @@
             {{ $leads->links() }}
         </div>
     </div>
+
+    <script>
+        (function () {
+            function csrf() {
+                const el = document.querySelector('meta[name="csrf-token"]');
+                return el ? el.getAttribute('content') : '';
+            }
+
+            async function assignLead(leadId, userId, selectEl) {
+                if (!leadId || !selectEl) return;
+                const token = csrf();
+                if (!token) return;
+
+                const prev = selectEl.getAttribute('data-prev') ?? selectEl.value;
+                selectEl.setAttribute('data-prev', prev);
+                selectEl.disabled = true;
+
+                try {
+                    const r = await fetch(`/leads/${leadId}/assign`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Accept': 'application/json',
+                            'X-CSRF-TOKEN': token,
+                        },
+                        body: JSON.stringify({ assigned_user_id: userId || null }),
+                        credentials: 'same-origin',
+                    });
+                    const j = await r.json().catch(() => ({}));
+                    if (!r.ok || !j.ok) {
+                        selectEl.value = prev;
+                        return;
+                    }
+                    selectEl.setAttribute('data-prev', selectEl.value);
+                } catch (e) {
+                    selectEl.value = prev;
+                } finally {
+                    selectEl.disabled = false;
+                }
+            }
+
+            document.addEventListener('DOMContentLoaded', () => {
+                document.querySelectorAll('.js-assign-lead').forEach((sel) => {
+                    sel.setAttribute('data-prev', sel.value);
+                    sel.addEventListener('change', () => {
+                        const leadId = Number(sel.getAttribute('data-lead-id') || 0);
+                        const userId = sel.value ? Number(sel.value) : null;
+                        assignLead(leadId, userId, sel);
+                    });
+                });
+            });
+        })();
+    </script>
 @endsection
 

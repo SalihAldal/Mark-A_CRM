@@ -399,6 +399,23 @@ class LeadController extends Controller
             }
         });
 
+        $assignedName = null;
+        if ($assignedId) {
+            $assignedName = User::query()
+                ->where('tenant_id', $tenantId)
+                ->where('id', $assignedId)
+                ->value('name');
+        }
+
+        if ($request->expectsJson()) {
+            return response()->json([
+                'ok' => true,
+                'lead_id' => (int) $lead->id,
+                'assigned_user_id' => $assignedId,
+                'assigned_name' => $assignedName,
+            ]);
+        }
+
         return redirect()->to('/leads/' . $lead->id)->with('status', 'Atama güncellendi.');
     }
 

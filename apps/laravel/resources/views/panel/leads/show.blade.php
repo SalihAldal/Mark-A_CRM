@@ -41,9 +41,8 @@
             <div>
                 <div class="label">Devralan</div>
                 @if($roleKey === 'tenant_admin')
-                    <form method="POST" action="/leads/{{ $lead->id }}/assign" style="display:flex; gap:8px; align-items:center; margin-top:6px;">
-                        @csrf
-                        <select class="input" name="assigned_user_id" style="min-width:220px;">
+                    <div style="display:flex; gap:8px; align-items:center; margin-top:6px;">
+                        <select class="input js-assign-lead" data-lead-id="{{ (int)$lead->id }}" style="min-width:220px;">
                             <option value="">—</option>
                             @foreach(($assignableUsers ?? []) as $u)
                                 <option value="{{ (int) data_get($u,'id',0) }}" {{ (int)($lead->assigned_user_id ?? 0) === (int) data_get($u,'id',0) ? 'selected' : '' }}>
@@ -51,8 +50,8 @@
                                 </option>
                             @endforeach
                         </select>
-                        <button class="btn btnPrimary" type="submit">Kaydet</button>
-                    </form>
+                        <div class="muted js-assign-status" style="display:none;">Kaydediliyor…</div>
+                    </div>
                 @else
                     <div style="font-weight:900">{{ $assigned?->name ?? '—' }}</div>
                 @endif
@@ -109,5 +108,61 @@
             </div>
         </div>
     @endif
+
+    <script>
+        (function () {
+            function csrf() {
+                const el = document.querySelector('meta[name="csrf-token"]');
+                return el ? el.getAttribute('content') : '';
+            }
+
+            async function assignLead(leadId, userId, selectEl, statusEl) {
+                if (!leadId || !selectEl) return;
+                const token = csrf();
+                if (!token) return;
+
+                const prev = selectEl.getAttribute('data-prev') ?? selectEl.value;
+                selectEl.setAttribute('data-prev', prev);
+                selectEl.disabled = true;
+                if (statusEl) statusEl.style.display = 'block';
+
+                try {
+                    const r = await fetch(`/leads/${leadId}/assign`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Accept': 'application/json',
+                            'X-CSRF-TOKEN': token,
+                        },
+                        body: JSON.stringify({ assigned_user_id: userId || null }),
+                        credentials: 'same-origin',
+                    });
+                    const j = await r.json().catch(() => ({}));
+                    if (!r.ok || !j.ok) {
+                        selectEl.value = prev;
+                        return;
+                    }
+                    selectEl.setAttribute('data-prev', selectEl.value);
+                } catch (e) {
+                    selectEl.value = prev;
+                } finally {
+                    selectEl.disabled = false;
+                    if (statusEl) statusEl.style.display = 'none';
+                }
+            }
+
+            document.addEventListener('DOMContentLoaded', () => {
+                const sel = document.querySelector('.js-assign-lead');
+                if (!sel) return;
+                const statusEl = document.querySelector('.js-assign-status');
+                sel.setAttribute('data-prev', sel.value);
+                sel.addEventListener('change', () => {
+                    const leadId = Number(sel.getAttribute('data-lead-id') || 0);
+                    const userId = sel.value ? Number(sel.value) : null;
+                    assignLead(leadId, userId, sel, statusEl);
+                });
+            });
+        })();
+    </script>
 @endsection
 

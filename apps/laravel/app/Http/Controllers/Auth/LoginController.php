@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Support\TenantContext;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 class LoginController extends Controller
@@ -52,6 +53,30 @@ class LoginController extends Controller
             $request->session()->invalidate();
             $request->session()->regenerateToken();
             return redirect()->to('/login')->with('status', 'Bu kullanıcı Super Panelde kullanılamaz. Tenant domaini ile giriş yap (örn: tenant1.localhost:8000).');
+        }
+
+        // Audit: successful tenant login
+        try {
+            $tenantId = $ctx->requireTenantId();
+            $uid = (int) (Auth::id() ?? 0);
+            if ($tenantId && $uid) {
+                DB::table('audit_logs')->insert([
+                    'tenant_id' => $tenantId,
+                    'actor_user_id' => $uid,
+                    'action' => 'user.login',
+                    'entity_type' => 'user',
+                    'entity_id' => $uid,
+                    'ip' => $request->ip(),
+                    'user_agent' => substr((string) $request->userAgent(), 0, 255),
+                    'metadata_json' => json_encode([
+                        'email' => (string) (Auth::user()?->email ?? ''),
+                        'host' => (string) ($ctx->host() ?? ''),
+                    ], JSON_UNESCAPED_UNICODE),
+                    'created_at' => now(),
+                ]);
+            }
+        } catch (\Throwable $e) {
+            // Do not block login if audit insert fails
         }
 
         return redirect()->to('/panel');

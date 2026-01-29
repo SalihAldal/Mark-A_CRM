@@ -18,6 +18,10 @@
             </div>
         </div>
 
+        @if(session('status'))
+            <div class="alert" style="margin-bottom:12px;">{{ session('status') }}</div>
+        @endif
+
         <form method="POST" action="/login" class="form">
             @csrf
 

@@ -219,9 +219,9 @@ class SettingsController extends Controller
         $status = (string) $data['status'];
         if ($status === 'active') {
             if ($provider === 'instagram') {
-                if (empty($finalCfg['page_id']) || empty($finalCfg['page_access_token'])) {
+                if (empty($finalCfg['page_id']) || empty($finalCfg['ig_business_id']) || empty($finalCfg['page_access_token'])) {
                     return redirect()->to('/settings#settings-integrations')
-                        ->with('status', 'Instagram için active yapmadan önce IG Account ID (entry.id) ve Page Access Token girmen lazım.');
+                        ->with('status', 'Instagram için active yapmadan önce Facebook Page ID + IG Business Account ID (webhook entry.id) + Page Access Token girmen lazım.');
                 }
             } elseif ($provider === 'whatsapp') {
                 if (empty($finalCfg['phone_number_id']) || empty($finalCfg['access_token'])) {
@@ -292,9 +292,9 @@ class SettingsController extends Controller
         $status = (string) $data['status'];
         if ($status === 'active') {
             if ($provider === 'instagram') {
-                if (empty($finalCfg['page_id']) || empty($finalCfg['page_access_token'])) {
+                if (empty($finalCfg['page_id']) || empty($finalCfg['ig_business_id']) || empty($finalCfg['page_access_token'])) {
                     return redirect()->to('/settings#settings-integrations')
-                        ->with('status', 'Instagram için active yapmadan önce IG Account ID (entry.id) ve Page Access Token girmen lazım.');
+                        ->with('status', 'Instagram için active yapmadan önce Facebook Page ID + IG Business Account ID (webhook entry.id) + Page Access Token girmen lazım.');
                 }
             } elseif ($provider === 'whatsapp' || $provider === 'wp') {
                 if (empty($finalCfg['phone_number_id']) || empty($finalCfg['access_token'])) {

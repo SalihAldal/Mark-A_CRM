@@ -66,6 +66,28 @@ class MessageController extends Controller
             $msg->save();
         }
 
+        // Audit (lead reply)
+        if ($thread->lead_id) {
+            DB::table('audit_logs')->insert([
+                'tenant_id' => $tenantId,
+                'actor_user_id' => $request->user()->id,
+                'action' => 'lead.reply',
+                'entity_type' => 'lead',
+                'entity_id' => (int) $thread->lead_id,
+                'ip' => $request->ip(),
+                'user_agent' => substr((string) $request->userAgent(), 0, 255),
+                'metadata_json' => json_encode([
+                    'lead_id' => (int) $thread->lead_id,
+                    'thread_id' => (int) $thread->id,
+                    'message_id' => (int) $msg->id,
+                    'message_type' => 'text',
+                    'text_preview' => Str::of((string) $data['text'])->trim()->limit(120, '…')->toString(),
+                    'delivery_error' => $deliveryError,
+                ], JSON_UNESCAPED_UNICODE),
+                'created_at' => now(),
+            ]);
+        }
+
         if ($thread->lead_id) {
             $newScore = $scoring->recalcForLead($tenantId, (int) $thread->lead_id);
             $gateway->broadcast($tenantId, [
@@ -164,6 +186,29 @@ class MessageController extends Controller
         $thread->last_message_at = now();
         $thread->save();
 
+        // Audit (lead reply)
+        if ($thread->lead_id) {
+            DB::table('audit_logs')->insert([
+                'tenant_id' => $tenantId,
+                'actor_user_id' => $request->user()->id,
+                'action' => 'lead.reply',
+                'entity_type' => 'lead',
+                'entity_id' => (int) $thread->lead_id,
+                'ip' => $request->ip(),
+                'user_agent' => substr((string) $request->userAgent(), 0, 255),
+                'metadata_json' => json_encode([
+                    'lead_id' => (int) $thread->lead_id,
+                    'thread_id' => (int) $thread->id,
+                    'message_id' => (int) $msg->id,
+                    'message_type' => (string) $type,
+                    'file_path' => (string) ($msg->file_path ?? ''),
+                    'file_mime' => (string) ($msg->file_mime ?? ''),
+                    'file_size' => (int) ($msg->file_size ?? 0),
+                ], JSON_UNESCAPED_UNICODE),
+                'created_at' => now(),
+            ]);
+        }
+
         if ($thread->lead_id) {
             $newScore = $scoring->recalcForLead($tenantId, (int) $thread->lead_id);
             $gateway->broadcast($tenantId, [
@@ -226,6 +271,27 @@ class MessageController extends Controller
 
         $thread->last_message_at = now();
         $thread->save();
+
+        // Audit (lead reply)
+        if ($thread->lead_id) {
+            DB::table('audit_logs')->insert([
+                'tenant_id' => $tenantId,
+                'actor_user_id' => $request->user()->id,
+                'action' => 'lead.reply',
+                'entity_type' => 'lead',
+                'entity_id' => (int) $thread->lead_id,
+                'ip' => $request->ip(),
+                'user_agent' => substr((string) $request->userAgent(), 0, 255),
+                'metadata_json' => json_encode([
+                    'lead_id' => (int) $thread->lead_id,
+                    'thread_id' => (int) $thread->id,
+                    'message_id' => (int) $msg->id,
+                    'message_type' => 'voice',
+                    'duration_ms' => (int) ($msg->voice_duration_ms ?? 0),
+                ], JSON_UNESCAPED_UNICODE),
+                'created_at' => now(),
+            ]);
+        }
 
         if ($thread->lead_id) {
             $newScore = $scoring->recalcForLead($tenantId, (int) $thread->lead_id);

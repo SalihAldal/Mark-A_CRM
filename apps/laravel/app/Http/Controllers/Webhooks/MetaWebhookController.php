@@ -95,9 +95,9 @@ class MetaWebhookController extends Controller
 
             // Try to determine provider/account from payload:
             // - WhatsApp Cloud: entry[0].changes[0].value.metadata.phone_number_id
-            // - Instagram: entry[0].id (page id) OR entry[0].messaging[0].recipient.id
+            // - Instagram: object=instagram -> entry[0].id is IG Business Account ID (NOT Facebook Page ID)
             $phoneNumberId = data_get($payload, 'entry.0.changes.0.value.metadata.phone_number_id');
-            $pageId = data_get($payload, 'entry.0.id') ?: data_get($payload, 'entry.0.messaging.0.recipient.id');
+            $igBusinessId = data_get($payload, 'entry.0.id') ?: data_get($payload, 'entry.0.messaging.0.recipient.id');
 
             $acc = null;
             $provider = null;
@@ -112,19 +112,27 @@ class MetaWebhookController extends Controller
                         $cfg = json_decode((string) ($row->config_json ?? '{}'), true);
                         return is_array($cfg) && (string) ($cfg['phone_number_id'] ?? '') === (string) $phoneNumberId;
                     });
-            } elseif ($pageId) {
+            } elseif ($igBusinessId) {
                 $provider = 'instagram';
                 $acc = DB::table('integration_accounts')
                     ->where('provider', 'instagram')
                     ->where('status', 'active')
                     ->get()
-                    ->first(function ($row) use ($pageId) {
+                    ->first(function ($row) use ($igBusinessId) {
                         $cfg = json_decode((string) ($row->config_json ?? '{}'), true);
-                        return is_array($cfg) && (string) ($cfg['page_id'] ?? '') === (string) $pageId;
+                        if (!is_array($cfg)) {
+                            return false;
+                        }
+                        // New config: ig_business_id
+                        if ((string) ($cfg['ig_business_id'] ?? '') === (string) $igBusinessId) {
+                            return true;
+                        }
+                        // Legacy fallback: some installs stored IG business id inside page_id by mistake.
+                        return empty($cfg['ig_business_id']) && (string) ($cfg['page_id'] ?? '') === (string) $igBusinessId;
                     });
 
             // Production-safe fallback (helps initial setup mistakes):
-            // If there is EXACTLY ONE active Instagram integration in the whole system and it has no page_id yet,
+            // If there is EXACTLY ONE active Instagram integration in the whole system and it has no ig_business_id yet,
             // bind it automatically to the incoming entry.id so we can start ingesting messages.
             // This avoids a "webhook received but nothing visible in Chats" situation.
             if (!$acc) {
@@ -140,9 +148,9 @@ class MetaWebhookController extends Controller
                     if (!is_array($cfg)) {
                         $cfg = [];
                     }
-                    $existingPageId = (string) ($cfg['page_id'] ?? '');
-                    if ($existingPageId === '') {
-                        $cfg['page_id'] = (string) $pageId;
+                    $existingBizId = (string) ($cfg['ig_business_id'] ?? '');
+                    if ($existingBizId === '') {
+                        $cfg['ig_business_id'] = (string) $igBusinessId;
                         DB::table('integration_accounts')
                             ->where('id', (int) $only->id)
                             ->update([
@@ -151,10 +159,10 @@ class MetaWebhookController extends Controller
                             ]);
                         $acc = $only;
 
-                        Log::warning('meta.webhook.auto_bound_instagram_page_id', [
+                        Log::warning('meta.webhook.auto_bound_instagram_ig_business_id', [
                             'integration_account_id' => (int) $only->id,
                             'tenant_id' => (int) $only->tenant_id,
-                            'page_id' => (string) $pageId,
+                            'ig_business_id' => (string) $igBusinessId,
                         ]);
                     }
                 }
@@ -165,7 +173,7 @@ class MetaWebhookController extends Controller
                 Log::warning('meta.webhook.unmatched_account', [
                     'provider_guess' => $provider,
                     'phone_number_id' => $phoneNumberId ? (string) $phoneNumberId : null,
-                    'page_id' => $pageId ? (string) $pageId : null,
+                    'ig_business_id' => $igBusinessId ? (string) $igBusinessId : null,
                 ]);
                 // Still ACK; keep payload only in logs for debugging.
                 return response('EVENT_RECEIVED', 200)->header('Content-Type', 'text/plain; charset=UTF-8');

@@ -11,7 +11,7 @@
                 <div class="muted">Çalışan aksiyonları ve sistem olayları.</div>
             </div>
             <form class="toolbar" style="margin:0;" method="GET" action="/logs">
-                <input class="input" name="action" value="{{ request('action') }}" placeholder="action (örn: lead.claim)">
+                <input class="input" name="action" value="{{ request('action') }}" placeholder="action (örn: user.login, lead.create, lead.reply, calendar.event_create)">
                 <button class="btn btnPrimary" type="submit">Filtrele</button>
                 <a class="btn" href="/logs">Temizle</a>
             </form>
@@ -24,31 +24,36 @@
                 <thead>
                 <tr>
                     <th style="padding-left:16px;">Zaman</th>
-                    <th>Actor</th>
-                    <th>Action</th>
-                    <th>Entity</th>
-                    <th style="padding-right:16px;">Meta</th>
+                    <th>Yapan</th>
+                    <th>İşlem</th>
+                    <th>Teknik</th>
                 </tr>
                 </thead>
                 <tbody>
                 @forelse($rows as $r)
-                    @php($actor = $r->actor_user_id ? ($actors[(int)$r->actor_user_id] ?? null) : null)
                     <tr>
                         <td style="padding-left:16px;">
                             <div style="font-weight:900">{{ \Illuminate\Support\Carbon::parse($r->created_at)->format('d.m.Y H:i') }}</div>
                             <div class="muted">{{ \Illuminate\Support\Carbon::parse($r->created_at)->diffForHumans() }}</div>
                         </td>
-                        <td>{{ $actor?->name ?? '—' }}</td>
-                        <td><span class="badge badgeNeutral">{{ $r->action }}</span></td>
-                        <td class="muted">{{ $r->entity_type ?? '—' }}#{{ $r->entity_id ?? '—' }}</td>
+                        <td style="white-space:nowrap;">{{ $r->actor_name ?? '—' }}</td>
+                        <td>
+                            <div style="font-weight:800;">
+                                {{ $r->message ?? $r->action }}
+                            </div>
+                            @if(!empty($r->detail))
+                                <div class="muted" style="margin-top:2px;">{{ $r->detail }}</div>
+                            @endif
+                        </td>
                         <td style="padding-right:16px;">
-                            <div class="muted" style="max-width:520px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
-                                {{ $r->metadata_json }}
+                            <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                                <span class="badge badgeNeutral">{{ $r->action }}</span>
+                                <span class="muted">{{ $r->entity_type ?? '—' }}#{{ $r->entity_id ?? '—' }}</span>
                             </div>
                         </td>
                     </tr>
                 @empty
-                    <tr><td colspan="5" class="muted" style="padding:16px;">Kayıt yok.</td></tr>
+                    <tr><td colspan="4" class="muted" style="padding:16px;">Kayıt yok.</td></tr>
                 @endforelse
                 </tbody>
             </table>

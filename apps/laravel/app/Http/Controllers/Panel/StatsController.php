@@ -26,6 +26,26 @@ class StatsController extends Controller
         $role = (string) ($request->user()->role?->key ?? '');
         $uid = (int) $request->user()->id;
 
+        // Tenant admin can inspect stats per staff user (optional).
+        // Staff can only see their own scoped stats.
+        $staffUsers = DB::table('users as u')
+            ->join('roles as r', 'r.id', '=', 'u.role_id')
+            ->where('u.tenant_id', $tenantId)
+            ->where('r.tenant_id', $tenantId)
+            ->where('r.key', 'staff')
+            ->orderBy('u.name')
+            ->get(['u.id', 'u.name']);
+
+        $scopeUserId = null;
+        if ($role === 'staff') {
+            $scopeUserId = $uid;
+        } elseif ($role === 'tenant_admin' && $request->filled('user_id')) {
+            $candidate = (int) $request->input('user_id');
+            if ($candidate > 0 && $staffUsers->firstWhere('id', $candidate)) {
+                $scopeUserId = $candidate;
+            }
+        }
+
         $threadsBase = DB::table('threads as t')
             ->where('t.tenant_id', $tenantId)
             ->where('t.created_at', '>=', $start);
@@ -39,21 +59,25 @@ class StatsController extends Controller
         $leadsBase = DB::table('leads as l')
             ->where('l.tenant_id', $tenantId);
 
-        if ($role === 'staff') {
-            $threadsBase->leftJoin('leads as l', function ($join) use ($tenantId) {
-                $join->on('l.id', '=', 't.lead_id')->where('l.tenant_id', '=', $tenantId);
-            })->where(function ($qq) use ($uid) {
-                $qq->where('l.assigned_user_id', $uid)->orWhere('l.owner_user_id', $uid);
-            });
+        if ($scopeUserId) {
+            $threadsBase
+                ->leftJoin('leads as l', function ($join) use ($tenantId) {
+                    $join->on('l.id', '=', 't.lead_id')->where('l.tenant_id', '=', $tenantId);
+                })
+                ->where(function ($qq) use ($scopeUserId) {
+                    $qq->where('l.assigned_user_id', $scopeUserId)->orWhere('l.owner_user_id', $scopeUserId);
+                });
 
-            $messagesBase->leftJoin('leads as l', function ($join) use ($tenantId) {
-                $join->on('l.id', '=', 't.lead_id')->where('l.tenant_id', '=', $tenantId);
-            })->where(function ($qq) use ($uid) {
-                $qq->where('l.assigned_user_id', $uid)->orWhere('l.owner_user_id', $uid);
-            });
+            $messagesBase
+                ->leftJoin('leads as l', function ($join) use ($tenantId) {
+                    $join->on('l.id', '=', 't.lead_id')->where('l.tenant_id', '=', $tenantId);
+                })
+                ->where(function ($qq) use ($scopeUserId) {
+                    $qq->where('l.assigned_user_id', $scopeUserId)->orWhere('l.owner_user_id', $scopeUserId);
+                });
 
-            $leadsBase->where(function ($qq) use ($uid) {
-                $qq->where('l.assigned_user_id', $uid)->orWhere('l.owner_user_id', $uid);
+            $leadsBase->where(function ($qq) use ($scopeUserId) {
+                $qq->where('l.assigned_user_id', $scopeUserId)->orWhere('l.owner_user_id', $scopeUserId);
             });
         }
 
@@ -102,9 +126,9 @@ class StatsController extends Controller
             ->leftJoin('leads as l', function ($join) use ($tenantId) {
                 $join->on('l.stage_id', '=', 's.id')->where('l.tenant_id', '=', $tenantId);
             })
-            ->when($role === 'staff', function ($q) use ($uid) {
-                $q->where(function ($qq) use ($uid) {
-                    $qq->where('l.assigned_user_id', $uid)->orWhere('l.owner_user_id', $uid);
+            ->when((bool) $scopeUserId, function ($q) use ($scopeUserId) {
+                $q->where(function ($qq) use ($scopeUserId) {
+                    $qq->where('l.assigned_user_id', $scopeUserId)->orWhere('l.owner_user_id', $scopeUserId);
                 });
             })
             ->select('s.name', 's.color', DB::raw('COUNT(l.id) as cnt'))
@@ -112,8 +136,16 @@ class StatsController extends Controller
             ->orderBy('s.sort_order')
             ->get();
 
+        $selectedUser = null;
+        if ($scopeUserId) {
+            $selectedUser = $staffUsers->firstWhere('id', (int) $scopeUserId);
+        }
+
         return view('panel.stats.index', [
             'days' => $days,
+            'scopeUserId' => $scopeUserId,
+            'staffUsers' => $staffUsers,
+            'selectedUser' => $selectedUser,
             'traffic' => $traffic,
             'kpi' => [
                 'threads' => (int) $kpiThreads,

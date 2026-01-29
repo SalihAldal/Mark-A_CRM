@@ -348,17 +348,13 @@ Prod:
 
 ## Webhook endpointleri
 
-- Instagram / Facebook (Meta Graph API):
-  - GET verify: `/api/webhooks/meta/instagram` veya `/api/webhooks/meta/facebook`
-  - POST webhook: `/api/webhooks/meta/instagram` veya `/api/webhooks/meta/facebook`
+- Meta (Instagram Messaging API / WhatsApp Cloud API):
+  - GET verify + POST delivery (aynı endpoint): `/webhooks/meta`
+  - Örnek public URL (ngrok): `https://<subdomain>.ngrok-free.dev/webhooks/meta`
+  - Verify token: Laravel `.env` içindeki `META_VERIFY_TOKEN`
 
 - Telegram:
-  - POST webhook: `/api/webhooks/telegram/{integrationAccount}`
-
-- WhatsApp:
-  - POST webhook: `/api/webhooks/whatsapp/{integrationAccount}`
-
-- WeChat:
-  - POST webhook: `/api/webhooks/wechat/{integrationAccount}`
+  - POST webhook: `/webhooks/telegram`
+  - Örnek public URL (ngrok): `https://<subdomain>.ngrok-free.dev/webhooks/telegram`
 
 

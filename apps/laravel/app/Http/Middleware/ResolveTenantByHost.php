@@ -29,6 +29,22 @@ class ResolveTenantByHost
             ->where('status', 'active')
             ->first();
 
+        // Local/dev fallback:
+        // If host is 127.0.0.1 / localhost and there is at least one active domain configured,
+        // pick a sensible default so devs can open the app without editing hosts file.
+        if (!$domain && in_array($host, ['127.0.0.1', 'localhost', '::1'], true)) {
+            $wantedPanel = $request->is('super*')
+                ? TenantContext::PANEL_SUPER
+                : TenantContext::PANEL_TENANT;
+
+            $domain = Domain::query()
+                ->where('panel', $wantedPanel)
+                ->where('status', 'active')
+                ->orderByDesc('is_primary')
+                ->orderBy('id')
+                ->first();
+        }
+
         if (!$domain) {
             abort(404, 'Domain not found.');
         }

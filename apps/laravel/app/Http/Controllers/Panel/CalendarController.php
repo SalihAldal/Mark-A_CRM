@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Panel;
 
 use App\Http\Controllers\Controller;
 use App\Models\CalendarEvent;
+use App\Support\TenantContext;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -71,6 +72,10 @@ class CalendarController extends Controller
             'urgency' => ['required', 'in:low,medium,high'],
         ]);
 
+        /** @var TenantContext $ctx */
+        $ctx = app(TenantContext::class);
+        $tenantId = $ctx->requireTenantId();
+
         $start = Carbon::parse((string) $data['starts_at']);
         $end = Carbon::parse((string) $data['ends_at']);
 
@@ -91,9 +96,12 @@ class CalendarController extends Controller
             $cursor->addDay();
         }
 
-        DB::transaction(function () use ($request, $data, $parts) {
+        $firstEventId = null;
+        $partsCount = 0;
+
+        DB::transaction(function () use ($request, $data, $parts, &$firstEventId, &$partsCount) {
             foreach ($parts as [$ps, $pe]) {
-                CalendarEvent::query()->create([
+                $ev = CalendarEvent::query()->create([
                     'owner_user_id' => $request->user()->id,
                     'title' => $data['title'],
                     'starts_at' => $ps,
@@ -102,8 +110,31 @@ class CalendarController extends Controller
                     'description' => $data['description'] ?? null,
                     'urgency' => $data['urgency'],
                 ]);
+                $partsCount++;
+                if ($firstEventId === null) {
+                    $firstEventId = (int) $ev->id;
+                }
             }
         });
+
+        // Audit
+        DB::table('audit_logs')->insert([
+            'tenant_id' => $tenantId,
+            'actor_user_id' => $request->user()->id,
+            'action' => 'calendar.event_create',
+            'entity_type' => 'calendar_event',
+            'entity_id' => (int) ($firstEventId ?? 0),
+            'ip' => $request->ip(),
+            'user_agent' => substr((string) $request->userAgent(), 0, 255),
+            'metadata_json' => json_encode([
+                'title' => (string) $data['title'],
+                'starts_at' => $start->toDateTimeString(),
+                'ends_at' => $end->toDateTimeString(),
+                'urgency' => (string) $data['urgency'],
+                'parts_count' => (int) $partsCount,
+            ], JSON_UNESCAPED_UNICODE),
+            'created_at' => now(),
+        ]);
 
         return response()->json(['ok' => true]);
     }
@@ -120,7 +151,32 @@ class CalendarController extends Controller
             abort(403);
         }
 
+        /** @var TenantContext $ctx */
+        $ctx = app(TenantContext::class);
+        $tenantId = $ctx->requireTenantId();
+
+        $meta = [
+            'title' => (string) ($event->title ?? ''),
+            'starts_at' => $event->starts_at?->toDateTimeString(),
+            'ends_at' => $event->ends_at?->toDateTimeString(),
+            'urgency' => (string) ($event->urgency ?? ''),
+        ];
+        $eventId = (int) $event->id;
+
         $event->delete();
+
+        DB::table('audit_logs')->insert([
+            'tenant_id' => $tenantId,
+            'actor_user_id' => $user->id,
+            'action' => 'calendar.event_delete',
+            'entity_type' => 'calendar_event',
+            'entity_id' => $eventId,
+            'ip' => $request->ip(),
+            'user_agent' => substr((string) $request->userAgent(), 0, 255),
+            'metadata_json' => json_encode($meta, JSON_UNESCAPED_UNICODE),
+            'created_at' => now(),
+        ]);
+
         return response()->json(['ok' => true]);
     }
 }
